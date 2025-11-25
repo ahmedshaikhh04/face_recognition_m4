@@ -1,4 +1,4 @@
-# 🎭 Face Recognition M4 (Apple Silicon Optimized)
+# 🎭 Face Recognition
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-MPS-orange.svg)](https://pytorch.org/)
