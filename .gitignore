@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+face_db.pkl
+recognitions.csv
+*.log
+venv/
+env/
+.venv/
+
