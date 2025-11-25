@@ -4,7 +4,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-MPS-orange.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A complete, production-ready real-time face recognition system optimized for **Apple Silicon (M1/M2/M4)** using PyTorch MPS backend. Features detection, recognition, tracking, TTS greetings, and enrollment tools.
+A complete, production-ready real-time face recognition system optimized, Features detection, recognition, tracking, TTS greetings, and enrollment tools.
 
 ---
 
