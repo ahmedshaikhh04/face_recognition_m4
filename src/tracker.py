@@ -70,6 +70,12 @@ class SimpleTracker:
                 # store raw box and update smoothed box
                 self.tracks[tid]['box'] = new_box
                 self.tracks[tid]['missed'] = 0
+                # Refresh label/score from the latest detection so identity corrections
+                # propagate instead of staying stuck on the first-assigned value.
+                if labels is not None and best_j < len(labels):
+                    self.tracks[tid]['label'] = labels[best_j]
+                if scores is not None and best_j < len(scores):
+                    self.tracks[tid]['score'] = float(scores[best_j])
                 # compute EMA per coordinate
                 sm = [int(round(self.smoothing_alpha * nb + (1.0 - self.smoothing_alpha) * ob)) for nb, ob in zip(new_box, old_box)]
                 self.tracks[tid]['smoothed'] = sm
