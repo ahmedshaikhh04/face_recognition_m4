@@ -19,6 +19,7 @@ import subprocess
 # Ensure local src imports work when running this file directly
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from detector import FaceDetector
+from depth import DepthEstimator
 from embedder import Embedder
 from recognizer import Recognizer
 from tracker import SimpleTracker, iou
@@ -58,6 +59,11 @@ def main():
     parser.add_argument('--greet', action='store_true', help='Enable TTS greeting for recognized people (macOS say)')
     parser.add_argument('--greet-interval', type=float, default=6.0, help='Minimum seconds between greetings for the same person')
     parser.add_argument('--greet-threshold', type=float, default=0.6, help='Minimum recognition score to trigger greeting')
+    parser.add_argument('--estimate-depth', action='store_true', help='Estimate depth from face bounding box and overlay distance')
+    parser.add_argument('--depth-fov', type=float, default=60.0, help='Assumed horizontal camera FOV in degrees for depth estimate')
+    parser.add_argument('--depth-face-width', type=float, default=0.16, help='Assumed physical width of a face in meters')
+    parser.add_argument('--depth-range', nargs=2, type=float, metavar=('MIN', 'MAX'), default=None,
+                        help='If set, only draw faces whose estimated depth is within [MIN, MAX] meters')
     args = parser.parse_args()
 
     device = get_device(args.device)
@@ -70,6 +76,7 @@ def main():
     detector = FaceDetector(device=device, detection_device=det_device, pad_mult=args.pad_mult)
     embedder = Embedder(model_name=args.embedder, device=device)
     tracker = SimpleTracker(smoothing_alpha=args.smoothing_alpha)
+    depth_estimator = DepthEstimator(face_width_m=args.depth_face_width, fov_deg=args.depth_fov)
 
     render_tracks = {}  # tid -> {"box": [...], "label": str, "score": float or None, "stale": int}
     MAX_STALE = 10  # frames to keep drawing after tracker stops outputting this tid
@@ -103,6 +110,7 @@ def main():
             labels = []
             boxes_out = []
             scores = []
+            depths = []
 
             if frame_count % args.detect_every == 0:
                 boxes, probs, faces = detector.detect(small)
@@ -149,9 +157,30 @@ def main():
                         boxes_out.append(b_orig)
                         labels.append(name)
                         scores.append(score)
+                        depth_est = depth_estimator.estimate(b_orig, frame.shape) if args.estimate_depth else None
+                        depths.append(depth_est)
             else:
                 # no detection; use previously tracked boxes
                 boxes = []
+
+            if args.estimate_depth and args.depth_range:
+                min_depth, max_depth = args.depth_range
+                filtered = []
+                for idx, depth_est in enumerate(depths):
+                    if depth_est is None:
+                        continue
+                    if min_depth <= depth_est.meters <= max_depth:
+                        filtered.append(idx)
+                if filtered:
+                    boxes_out = [boxes_out[i] for i in filtered]
+                    labels = [labels[i] for i in filtered]
+                    scores = [scores[i] for i in filtered]
+                    depths = [depths[i] for i in filtered]
+                else:
+                    boxes_out = []
+                    labels = []
+                    scores = []
+                    depths = []
 
             # tracker: update with boxes_out (in original frame coords)
             tracked = tracker.update(boxes_out, labels=labels, scores=scores)
@@ -183,12 +212,14 @@ def main():
                 updated_tids.add(tid)
 
                 info = render_tracks.get(tid)
+                depth_est = depth_estimator.estimate(box, frame.shape) if args.estimate_depth else None
                 if info is None:
                     # First time we see this track id: store its box directly
                     render_tracks[tid] = {
                         "box": box,
                         "label": label,
                         "score": score,
+                        "depth": depth_est,
                         "stale": 0,
                     }
                 else:
@@ -199,6 +230,7 @@ def main():
                     # Always refresh metadata
                     render_tracks[tid]["label"] = label
                     render_tracks[tid]["score"] = score
+                    render_tracks[tid]["depth"] = depth_est
                     render_tracks[tid]["stale"] = 0
 
             # Increment stale counters for tracks not updated this frame
@@ -213,8 +245,9 @@ def main():
                 box = info["box"]
                 label = info["label"]
                 score = info["score"]
+                depth_est = info.get("depth")
 
-                draw_box_label(frame, box, f"{label}#{tid}", score)
+                draw_box_label(frame, box, f"{label}#{tid}", score, depth_est.meters if depth_est else None)
 
                 # TTS greeting (macOS `say`) — speak once per person per interval
                 if args.greet and label != 'Unknown' and score is not None:

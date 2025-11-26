@@ -129,6 +129,7 @@ flowchart TD
 - **Threshold**: Minimum similarity to consider a match (default: 0.6)
 - **Tracker**: Remembers faces across frames so we don't detect every frame
 - **Detection Interval**: Run detection every N frames (saves processing time)
+- **Depth Estimate**: Optional approximate distance overlay using pinhole model
 
 ### 🛠️ Technologies Used
 
@@ -138,6 +139,7 @@ flowchart TD
 | Face Embedding | InceptionResnetV1 / MobileFaceNet | Converts face to 512 numbers |
 | Similarity | Cosine Similarity | Compares embeddings |
 | Tracking | IOU Tracker | Follows faces across frames |
+| Depth | Pinhole model | Estimate approximate person distance |
 | Acceleration | PyTorch MPS | Uses Apple Silicon GPU |
 | TTS | macOS `say` | Speaks recognized names |
 
@@ -378,6 +380,12 @@ python src/realtime.py --db face_db.pkl --detect-every 2 --threshold 0.7
 ```bash
 python src/realtime.py --db face_db.pkl --device cpu --detection-device cpu
 ```
+
+### Example 6: Depth Overlay + Range Gating
+```bash
+python src/realtime.py --db face_db.pkl --estimate-depth --depth-range 0.5 2.5
+```
+This overlays an approximate distance for each face using a pinhole model and optionally drops faces outside the desired range.
 
 ---
 
