@@ -9,16 +9,29 @@ import cv2
 import numpy as np
 
 
-def draw_box_label(frame: np.ndarray, box: Tuple[int, int, int, int], label: str, score: float = None, color=(0, 255, 0)) -> None:
+def draw_box_label(
+    frame: np.ndarray,
+    box: Tuple[int, int, int, int],
+    label: str,
+    score: float = None,
+    depth_m: float = None,
+    color=(0, 255, 0),
+) -> None:
     x1, y1, x2, y2 = box
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-    text = label
-    if score is not None:
-        text = f"{label} {score:.2f}"
-    # draw background
-    (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-    cv2.rectangle(frame, (x1, y1 - 20), (x1 + w, y1), color, -1)
-    cv2.putText(frame, text, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
+
+    lines = [f"{label} {score:.2f}" if score is not None else label]
+    if depth_m is not None:
+        lines.append(f"~{depth_m:.2f}m")
+
+    line_height = 18
+    total_height = line_height * len(lines) + 4
+    max_width = max(cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)[0][0] for text in lines)
+
+    cv2.rectangle(frame, (x1, y1 - total_height), (x1 + max_width + 6, y1), color, -1)
+    for idx, text in enumerate(lines):
+        offset = y1 - 4 - (len(lines) - 1 - idx) * line_height
+        cv2.putText(frame, text, (x1 + 3, offset), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
 
 
 def resize_keep_aspect(frame: np.ndarray, width: int = 640) -> Tuple[np.ndarray, float]:
