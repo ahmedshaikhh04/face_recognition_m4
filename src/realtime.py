@@ -36,7 +36,6 @@ def get_device(prefer: str = None):
         return torch.device('mps')
     return torch.device('cpu')
 
-
 def load_db(path: str):
     import pickle
     with open(path, 'rb') as f:
@@ -71,6 +70,10 @@ def main():
     detector = FaceDetector(device=device, detection_device=det_device, pad_mult=args.pad_mult)
     embedder = Embedder(model_name=args.embedder, device=device)
     tracker = SimpleTracker(smoothing_alpha=args.smoothing_alpha)
+
+    render_tracks = {}  # tid -> {"box": [...], "label": str, "score": float or None, "stale": int}
+    MAX_STALE = 10  # frames to keep drawing after tracker stops outputting this tid
+    IOU_HOLD_THRESH = 0.9
 
     cap = cv2.VideoCapture(args.cam)
     if not cap.isOpened():
@@ -153,7 +156,9 @@ def main():
             # tracker: update with boxes_out (in original frame coords)
             tracked = tracker.update(boxes_out, labels=labels, scores=scores)
 
-            # Draw tracked boxes
+            # ---- Update stable render tracks (no flicker) ----
+            updated_tids = set()
+
             for tid, box in tracked.items():
                 # prefer track's last-known label (set in tracker.update); fallback to IoU matching
                 tr = tracker.tracks.get(tid, {})
@@ -174,6 +179,41 @@ def main():
                         # store back into tracker
                         tr['label'] = label
                         tr['score'] = score
+
+                updated_tids.add(tid)
+
+                info = render_tracks.get(tid)
+                if info is None:
+                    # First time we see this track id: store its box directly
+                    render_tracks[tid] = {
+                        "box": box,
+                        "label": label,
+                        "score": score,
+                        "stale": 0,
+                    }
+                else:
+                    # Already have a box: only change it if it moved a lot (low IoU).
+                    prev_box = info["box"]
+                    if iou(prev_box, box) < IOU_HOLD_THRESH:
+                        render_tracks[tid]["box"] = box
+                    # Always refresh metadata
+                    render_tracks[tid]["label"] = label
+                    render_tracks[tid]["score"] = score
+                    render_tracks[tid]["stale"] = 0
+
+            # Increment stale counters for tracks not updated this frame
+            for tid in list(render_tracks.keys()):
+                if tid not in updated_tids:
+                    render_tracks[tid]["stale"] += 1
+                    if render_tracks[tid]["stale"] > MAX_STALE:
+                        del render_tracks[tid]
+
+            # ---- Draw stable (de-flickered) boxes ----
+            for tid, info in render_tracks.items():
+                box = info["box"]
+                label = info["label"]
+                score = info["score"]
+
                 draw_box_label(frame, box, f"{label}#{tid}", score)
 
                 # TTS greeting (macOS `say`) — speak once per person per interval
@@ -189,14 +229,17 @@ def main():
                             # non-blocking speak
                             try:
                                 # Expand abbreviations for better TTS pronunciation
-                                spoken_label = label.replace("Dr.", "Doctor").replace("Mr.", "Mister").replace("Ms.", "Miss").replace("Mrs.", "Missus")
+                                spoken_label = label.replace("Dr.", "Doctor").replace("Mr.", "Mister").replace("Ms.",
+                                                                                                               "Miss").replace(
+                                    "Mrs.", "Missus")
                                 text = f"Hello {spoken_label}. Welcome."
                                 # debug print to confirm greeting trigger
                                 print(f"Greeting triggered for {label} (score={sc_val:.3f}) -> say: {text}")
                                 try:
                                     # Try the absolute say path first (more deterministic on macOS)
                                     SAY_BIN = '/usr/bin/say'
-                                    p = subprocess.Popen([SAY_BIN, text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    p = subprocess.Popen([SAY_BIN, text], stdout=subprocess.DEVNULL,
+                                                         stderr=subprocess.DEVNULL)
                                     print(f"Launched say pid={p.pid} via {SAY_BIN}")
                                     last_greet_time[label] = now
                                 except Exception as e:
